@@ -3,6 +3,7 @@ import admin from "firebase-admin";
 import { db } from "../firebaseAdmin";
 import { authenticate, AuthenticatedRequest } from "../middleware/auth";
 import { HttpError, sendError, sendSuccess } from "../lib/http";
+import type { MessageKey } from "../lib/i18n";
 
 type DuelType = "codigo" | "hacking" | "outro";
 
@@ -63,7 +64,7 @@ async function readDuel(id: string) {
 
 function getDuelOrThrow(doc: admin.firestore.DocumentSnapshot): DuelData {
   if (!doc.exists) {
-    throw new HttpError(404, "Duelo não encontrado.");
+    throw new HttpError(404, "duelNotFound");
   }
 
   return doc.data() as DuelData;
@@ -136,11 +137,11 @@ async function runDuelAction(
 
     return sendSuccess(res, await readDuel(duelId));
   } catch (err) {
-    return sendError(res, err);
+    return sendError(req, res, err);
   }
 }
 
-function assertStatus(duel: DuelData, expected: DuelStatus, message: string) {
+function assertStatus(duel: DuelData, expected: DuelStatus, message: MessageKey) {
   if (duel.status !== expected) {
     throw new HttpError(400, message);
   }
@@ -149,13 +150,13 @@ function assertStatus(duel: DuelData, expected: DuelStatus, message: string) {
 /** Só quem foi reportado como perdedor pode confirmar/contestar o resultado. */
 function assertReportedLoser(duel: DuelData, uid: string) {
   if (!isParticipant(duel, uid) || uid === duel.reportedWinnerId) {
-    throw new HttpError(403, "Só quem foi apontado como perdedor pode fazer isso.");
+    throw new HttpError(403, "onlyReportedLoser");
   }
 }
 
 function assertWinnerIsParticipant(duel: DuelData, winnerId: unknown): asserts winnerId is string {
   if (!isNonEmptyString(winnerId) || !isParticipant(duel, winnerId)) {
-    throw new HttpError(400, "O vencedor precisa ser um dos participantes do duelo.");
+    throw new HttpError(400, "winnerMustBeParticipant");
   }
 }
 
@@ -181,14 +182,14 @@ router.get("/", async (req: AuthenticatedRequest, res) => {
 
     return sendSuccess(res, duels);
   } catch (err) {
-    return sendError(res, err);
+    return sendError(req, res, err);
   }
 });
 
 router.get("/disputed", async (req: AuthenticatedRequest, res) => {
   try {
     if (!(await isAdmin(req.uid!))) {
-      throw new HttpError(403, "Somente o Conselho pode ver os duelos em disputa.");
+      throw new HttpError(403, "disputedOnlyCouncil");
     }
 
     const snapshot = await duelsCollection.where("status", "==", "disputed").get();
@@ -202,7 +203,7 @@ router.get("/disputed", async (req: AuthenticatedRequest, res) => {
 
     return sendSuccess(res, duels);
   } catch (err) {
-    return sendError(res, err);
+    return sendError(req, res, err);
   }
 });
 
@@ -216,27 +217,27 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
 
   try {
     if (!isNonEmptyString(opponentId)) {
-      throw new HttpError(400, "Escolha quem você quer desafiar.");
+      throw new HttpError(400, "chooseOpponent");
     }
 
     if (opponentId === challengerId) {
-      throw new HttpError(400, "Você não pode desafiar a si mesmo.");
+      throw new HttpError(400, "cannotChallengeSelf");
     }
 
     if (!DUEL_TYPES.includes(type)) {
-      throw new HttpError(400, "Tipo de duelo inválido.");
+      throw new HttpError(400, "invalidDuelType");
     }
 
     if (type === "outro" && !isNonEmptyString(customType)) {
-      throw new HttpError(400, "Descreva o tipo do duelo.");
+      throw new HttpError(400, "describeDuelType");
     }
 
     if (!isNonEmptyString(rules)) {
-      throw new HttpError(400, "Defina as regras do duelo.");
+      throw new HttpError(400, "defineRules");
     }
 
     if (!Number.isInteger(wagerAmount) || wagerAmount <= 0) {
-      throw new HttpError(400, "A aposta precisa ser um número inteiro de Dracmas maior que zero.");
+      throw new HttpError(400, "invalidWager");
     }
 
     const duelRef = duelsCollection.doc();
@@ -249,17 +250,17 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
       const opponent = await transaction.get(opponentRef);
 
       if (!challenger.exists) {
-        throw new HttpError(400, "Seu perfil não foi encontrado.");
+        throw new HttpError(400, "profileNotFound");
       }
 
       if (!opponent.exists) {
-        throw new HttpError(400, "O membro desafiado não foi encontrado.");
+        throw new HttpError(400, "opponentNotFound");
       }
 
       const balance = challenger.data()?.dracmas ?? 0;
 
       if (wagerAmount > balance) {
-        throw new HttpError(400, "Você não pode apostar mais Dracmas do que tem.");
+        throw new HttpError(400, "wagerExceedsBalance");
       }
 
       const challengerName = challenger.data()?.name ?? "Membro";
@@ -297,7 +298,7 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
 
     return sendSuccess(res, await readDuel(duelRef.id), 201);
   } catch (err) {
-    return sendError(res, err);
+    return sendError(req, res, err);
   }
 });
 
@@ -308,10 +309,10 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
 router.post("/:id/accept", (req: AuthenticatedRequest, res) =>
   runDuelAction(req, res, (transaction, duelRef, duel, uid) => {
     if (duel.opponentId !== uid) {
-      throw new HttpError(403, "Só quem foi desafiado pode aceitar o duelo.");
+      throw new HttpError(403, "onlyOpponentAccepts");
     }
 
-    assertStatus(duel, "pending", "Este duelo não está mais aguardando resposta.");
+    assertStatus(duel, "pending", "notPendingAnymore");
 
     transaction.update(duelRef, {
       status: "active",
@@ -330,10 +331,10 @@ router.post("/:id/accept", (req: AuthenticatedRequest, res) =>
 router.post("/:id/decline", (req: AuthenticatedRequest, res) =>
   runDuelAction(req, res, (transaction, duelRef, duel, uid) => {
     if (duel.opponentId !== uid) {
-      throw new HttpError(403, "Só quem foi desafiado pode recusar o duelo.");
+      throw new HttpError(403, "onlyOpponentDeclines");
     }
 
-    assertStatus(duel, "pending", "Este duelo não está mais aguardando resposta.");
+    assertStatus(duel, "pending", "notPendingAnymore");
 
     transaction.update(duelRef, {
       status: "declined",
@@ -352,10 +353,10 @@ router.post("/:id/decline", (req: AuthenticatedRequest, res) =>
 router.post("/:id/cancel", (req: AuthenticatedRequest, res) =>
   runDuelAction(req, res, (transaction, duelRef, duel, uid) => {
     if (duel.challengerId !== uid) {
-      throw new HttpError(403, "Só quem desafiou pode cancelar o duelo.");
+      throw new HttpError(403, "onlyChallengerCancels");
     }
 
-    assertStatus(duel, "pending", "Só é possível cancelar um duelo que ainda não foi respondido.");
+    assertStatus(duel, "pending", "cancelOnlyPending");
 
     transaction.update(duelRef, {
       status: "cancelled",
@@ -373,10 +374,10 @@ router.post("/:id/report-result", (req: AuthenticatedRequest, res) =>
     const { winnerId } = req.body ?? {};
 
     if (!isParticipant(duel, uid)) {
-      throw new HttpError(403, "Só os participantes podem reportar o resultado do duelo.");
+      throw new HttpError(403, "onlyParticipantsReport");
     }
 
-    assertStatus(duel, "active", "Só é possível reportar o resultado de um duelo em andamento.");
+    assertStatus(duel, "active", "reportOnlyActive");
     assertWinnerIsParticipant(duel, winnerId);
 
     transaction.update(duelRef, {
@@ -398,7 +399,7 @@ router.post("/:id/report-result", (req: AuthenticatedRequest, res) =>
 router.post("/:id/confirm", (req: AuthenticatedRequest, res) =>
   runDuelAction(req, res, async (transaction, duelRef, duel, uid) => {
     assertReportedLoser(duel, uid);
-    assertStatus(duel, "awaiting_payment", "Este duelo não está aguardando pagamento.");
+    assertStatus(duel, "awaiting_payment", "notAwaitingPayment");
 
     const loserId = uid;
     const winnerId = duel.reportedWinnerId!;
@@ -411,13 +412,13 @@ router.post("/:id/confirm", (req: AuthenticatedRequest, res) =>
     const winner = await transaction.get(winnerRef);
 
     if (!loser.exists || !winner.exists) {
-      throw new HttpError(400, "Não foi possível encontrar os participantes do duelo.");
+      throw new HttpError(400, "participantsNotFound");
     }
 
     const loserBalance = loser.data()?.dracmas ?? 0;
 
     if (loserBalance < amount) {
-      throw new HttpError(400, "Saldo insuficiente para pagar a aposta.");
+      throw new HttpError(400, "insufficientBalance");
     }
 
     transaction.update(loserRef, {
@@ -466,16 +467,16 @@ router.post("/:id/dispute", (req: AuthenticatedRequest, res) =>
     const { reason } = req.body ?? {};
 
     assertReportedLoser(duel, uid);
-    assertStatus(duel, "awaiting_payment", "Só é possível contestar um resultado aguardando pagamento.");
+    assertStatus(duel, "awaiting_payment", "disputeOnlyAwaitingPayment");
 
     // Depois do /resolve o resultado foi arbitrado pelo Conselho
     // (reportedBy: null) — contestar de novo só criaria um ciclo infinito.
     if (!duel.reportedBy) {
-      throw new HttpError(400, "Este resultado já foi decidido pelo Conselho e não pode ser contestado.");
+      throw new HttpError(400, "alreadyDecidedByCouncil");
     }
 
     if (!isNonEmptyString(reason)) {
-      throw new HttpError(400, "Explique por que você está contestando o resultado.");
+      throw new HttpError(400, "explainDispute");
     }
 
     transaction.update(duelRef, {
@@ -499,16 +500,16 @@ router.post("/:id/dispute", (req: AuthenticatedRequest, res) =>
 router.post("/:id/resolve", async (req: AuthenticatedRequest, res) => {
   try {
     if (!(await isAdmin(req.uid!))) {
-      throw new HttpError(403, "Somente o Conselho pode resolver disputas.");
+      throw new HttpError(403, "resolveOnlyCouncil");
     }
   } catch (err) {
-    return sendError(res, err);
+    return sendError(req, res, err);
   }
 
   return runDuelAction(req, res, (transaction, duelRef, duel) => {
     const { winnerId } = req.body ?? {};
 
-    assertStatus(duel, "disputed", "Este duelo não está em disputa.");
+    assertStatus(duel, "disputed", "notDisputed");
     assertWinnerIsParticipant(duel, winnerId);
 
     const loserId = otherParticipant(duel, winnerId);

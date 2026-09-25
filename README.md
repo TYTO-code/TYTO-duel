@@ -34,5 +34,7 @@ com `app.use("/api/duels", duelRoutes)`.
 | POST | `/:id/dispute` | perdedor reportado | `awaiting_payment` → `disputed` |
 | POST | `/:id/resolve` | admin | `disputed` → `awaiting_payment` |
 
-Respostas: `{ success: true, data }` ou `{ success: false, message }` (mensagem em pt-BR).
+Respostas: `{ success: true, data }` ou `{ success: false, message }`. A `message` sai no idioma
+do membro, com a mesma regra do frontend: `users/{uid}.locale` se for pt/es, senão o idioma
+principal do navegador (`Accept-Language`), senão inglês. As notificações continuam em pt-BR.
 Um resultado arbitrado pelo Conselho (`/resolve`) não pode ser contestado de novo.

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import admin from "firebase-admin";
+import { resolveLocale, t } from "../lib/i18n";
 
 export interface AuthenticatedRequest extends Request {
   uid?: string;
@@ -16,7 +17,7 @@ export async function authenticate(
     if (!authHeader?.startsWith("Bearer ")) {
       return res.status(401).json({
         success: false,
-        message: "Você precisa estar autenticado.",
+        message: t(await resolveLocale(req), "notAuthenticated"),
       });
     }
 
@@ -30,7 +31,7 @@ export async function authenticate(
   } catch (error) {
     return res.status(401).json({
       success: false,
-      message: "Sua sessão expirou. Entre novamente.",
+      message: t(await resolveLocale(req), "sessionExpired"),
     });
   }
 }

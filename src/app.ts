@@ -1,6 +1,7 @@
 import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
 import duelRoutes from "./routes/duels";
+import { resolveLocale, t } from "./lib/i18n";
 
 export function createApp() {
   const app = express();
@@ -12,22 +13,21 @@ export function createApp() {
 
   app.use("/api/duels", duelRoutes);
 
-  app.use((_req: Request, res: Response) => {
-    res.status(404).json({ success: false, message: "Rota não encontrada." });
+  app.use(async (req: Request, res: Response) => {
+    res.status(404).json({ success: false, message: t(await resolveLocale(req), "routeNotFound") });
   });
 
   // JSON malformado no body e qualquer erro que escape das rotas.
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  app.use(async (err: any, req: Request, res: Response, _next: NextFunction) => {
+    const locale = await resolveLocale(req);
+
     if (err?.type === "entity.parse.failed") {
-      return res.status(400).json({ success: false, message: "Dados da requisição inválidos." });
+      return res.status(400).json({ success: false, message: t(locale, "invalidRequest") });
     }
 
     console.error(err);
 
-    res.status(500).json({
-      success: false,
-      message: "Algo deu errado no servidor. Tente novamente em instantes.",
-    });
+    res.status(500).json({ success: false, message: t(locale, "internalError") });
   });
 
   return app;
