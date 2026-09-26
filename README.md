@@ -12,12 +12,17 @@ o resultado (`/confirm`), numa `db.runTransaction()` que debita/credita
 ```bash
 npm install
 cp .env.example .env   # configure as credenciais do firebase-admin
-npm run dev            # http://localhost:3001
+npm run dev            # http://localhost:3002
 npm run build && npm start
 ```
 
-O router é exportado em `src/routes/duels.ts` e pode ser montado na API principal
-com `app.use("/api/duels", duelRoutes)`.
+## Deploy
+
+Roda como **serviço separado** (deploy próprio, igual ao TYTO-email): `npm run build`
+e `npm start`, com as credenciais do firebase-admin e, de preferência, `CORS_ORIGIN`
+restrito ao domínio do frontend. O frontend (`TYTO.club`) aponta
+`VITE_DUEL_API_URL` para a URL base deste serviço e usa a página `/duelos`
+(`src/pages/Duelos.tsx`, cliente em `src/services/duelService.ts`).
 
 ## Endpoints (`/api/duels`, todos com `Authorization: Bearer <Firebase ID token>`)
 
