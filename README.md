@@ -1,21 +1,43 @@
 # TYTO-duel
 
-> Parte da organização [TYTO-code](https://github.com/TYTO-code).
+Serviço de Duelos da API do TYTO.club (Express + TypeScript + firebase-admin).
 
-## Sobre
+Um membro desafia outro para um duelo (`codigo`, `hacking` ou `outro`) apostando
+Dracmas. Não há escrow: a aposta só sai da conta do perdedor quando ele confirma
+o resultado (`/confirm`), numa `db.runTransaction()` que debita/credita
+`users` e `public_users`, registra um `duel_payout` em `transactions` e fecha o duelo.
 
-_Descreva aqui o objetivo do projeto._
-
-## Primeiros passos
+## Rodando
 
 ```bash
-git clone git@github.com:TYTO-code/TYTO-duel.git
-cd TYTO-duel
+npm install
+cp .env.example .env   # configure as credenciais do firebase-admin
+npm run dev            # http://localhost:3001
+npm run build && npm start
 ```
 
-## Estrutura
+O router é exportado em `src/routes/duels.ts` e pode ser montado na API principal
+com `app.use("/api/duels", duelRoutes)`.
 
-_A definir._
+## Endpoints (`/api/duels`, todos com `Authorization: Bearer <Firebase ID token>`)
+
+| Método | Rota | Quem | Transição |
+| --- | --- | --- | --- |
+| GET | `/` | participante | lista duelos do usuário |
+| GET | `/disputed` | admin (`users/{uid}.admin`) | lista duelos `disputed` |
+| POST | `/` | qualquer membro | cria `pending` |
+| POST | `/:id/accept` | desafiado | `pending` → `active` |
+| POST | `/:id/decline` | desafiado | `pending` → `declined` |
+| POST | `/:id/cancel` | desafiante | `pending` → `cancelled` |
+| POST | `/:id/report-result` | participante | `active` → `awaiting_payment` |
+| POST | `/:id/confirm` | perdedor reportado | `awaiting_payment` → `completed` (paga a aposta) |
+| POST | `/:id/dispute` | perdedor reportado | `awaiting_payment` → `disputed` |
+| POST | `/:id/resolve` | admin | `disputed` → `awaiting_payment` |
+
+Respostas: `{ success: true, data }` ou `{ success: false, message }`. A `message` sai no idioma
+do membro, com a mesma regra do frontend: `users/{uid}.locale` se for pt/es, senão o idioma
+principal do navegador (`Accept-Language`), senão inglês. As notificações continuam em pt-BR.
+Um resultado arbitrado pelo Conselho (`/resolve`) não pode ser contestado de novo.
 
 ## Contribuindo
 
@@ -23,7 +45,3 @@ _A definir._
 2. Faça commit das alterações: `git commit -m "Descrição da alteração"`
 3. Envie a branch: `git push origin minha-feature`
 4. Abra um Pull Request
-
-## Licença
-
-_A definir._
