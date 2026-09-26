@@ -38,3 +38,10 @@ Respostas: `{ success: true, data }` ou `{ success: false, message }`. A `messag
 do membro, com a mesma regra do frontend: `users/{uid}.locale` se for pt/es, senão o idioma
 principal do navegador (`Accept-Language`), senão inglês. As notificações continuam em pt-BR.
 Um resultado arbitrado pelo Conselho (`/resolve`) não pode ser contestado de novo.
+
+## Contribuindo
+
+1. Crie uma branch a partir da `main`: `git checkout -b minha-feature`
+2. Faça commit das alterações: `git commit -m "Descrição da alteração"`
+3. Envie a branch: `git push origin minha-feature`
+4. Abra um Pull Request
