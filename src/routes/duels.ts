@@ -4,6 +4,7 @@ import { db } from "../firebaseAdmin";
 import { authenticate, AuthenticatedRequest } from "../middleware/auth";
 import { HttpError, sendError, sendSuccess } from "../lib/http";
 import type { MessageKey } from "../lib/i18n";
+import { syncDuelOnMap } from "../lib/mapConnection";
 
 type DuelType = "codigo" | "hacking" | "outro";
 
@@ -134,6 +135,8 @@ async function runDuelAction(
 
       await action(transaction, duelRef, duel, uid);
     });
+
+    await syncDuelOnMap(duelId);
 
     return sendSuccess(res, await readDuel(duelId));
   } catch (err) {
@@ -295,6 +298,8 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
         `${challengerName} te desafiou para um ${describeDuelType(type, normalizedCustomType)}, apostando ${wagerAmount} Ð.`
       );
     });
+
+    await syncDuelOnMap(duelRef.id);
 
     return sendSuccess(res, await readDuel(duelRef.id), 201);
   } catch (err) {
