@@ -44,6 +44,17 @@ do membro, com a mesma regra do frontend: `users/{uid}.locale` se for pt/es, sen
 principal do navegador (`Accept-Language`), senão inglês. As notificações continuam em pt-BR.
 Um resultado arbitrado pelo Conselho (`/resolve`) não pode ser contestado de novo.
 
+## Mapa das Pólis
+
+`src/lib/mapConnection.ts` espelha cada duelo entre Pólis diferentes em `map_connections/duel_{id}`
+(melhor esforço, nunca falha a requisição do duelo). Como não existe rota de exclusão de duelo, um
+`duels/{id}` só desaparece por fora da API (ex.: edição manual no console do Firestore) — nesse caso,
+a próxima sincronização real apaga a conexão órfã sozinha, mas nada aciona essa sincronização para um
+duelo que já não existe. `expiresAt` (30 dias, renovado a cada sincronização) é gravado para permitir
+uma política de TTL do Firestore (passo manual no console GCP, fora do que este serviço consegue fazer
+sozinho) como rede de segurança adicional. Para limpar o que já ficou órfão antes desta correção, rode
+`node scripts/limpar-conexoes-orfas.mjs` (simula) ou `--apply` (apaga de verdade) depois de `npm run build`.
+
 ## Contribuindo
 
 1. Crie uma branch a partir da `main`: `git checkout -b minha-feature`

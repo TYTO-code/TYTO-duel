@@ -9,6 +9,16 @@ import { db } from "../firebaseAdmin";
 
 export type MapConnectionState = "pending" | "active" | "ended";
 
+/**
+ * Teto de segurança para uma conexão `pending`/`active` sem toque algum (nenhuma ação do duelo chamou
+ * `syncDuelOnMap` de novo): se o duelo foi apagado por fora da API (não existe rota de exclusão — só dá
+ * para acontecer manualmente no console do Firestore), nada mais nunca vai zerar o estado, e a linha
+ * fica no mapa. Renovado a cada sincronização real, então um duelo `disputed` genuíno — que não tem prazo
+ * e pode esperar resolução do admin por um tempo — nunca é afetado por isto. Em dias, bem generoso de
+ * propósito (ver `.claude/rules/mapa-das-polis.md`: nunca esconder desafio em andamento de verdade).
+ */
+export const MAP_CONNECTION_TTL_DAYS = 30;
+
 /** `null` = o duelo não aparece no mapa (ex.: status desconhecido). */
 export function mapStateForDuel(status: unknown): MapConnectionState | null {
   switch (status) {
@@ -44,15 +54,24 @@ async function pointOfUser(uid: unknown) {
   return { polisId, point: validPoint(polis.data()) };
 }
 
+function futureExpiry(): admin.firestore.Timestamp {
+  return admin.firestore.Timestamp.fromMillis(Date.now() + MAP_CONNECTION_TTL_DAYS * 24 * 60 * 60 * 1000);
+}
+
 export async function syncDuelOnMap(duelId: string): Promise<void> {
   try {
+    const ref = db.collection("map_connections").doc(`duel_${duelId}`);
     const duelSnap = await db.collection("duels").doc(duelId).get();
     const duel = duelSnap.data();
-    if (!duel) return;
+    if (!duel) {
+      // Duelo não existe mais (só sai assim por fora da API — não há rota de exclusão): se sobrou uma
+      // conexão órfã dele, apaga, em vez de deixar a linha presa até o prazo de segurança do cliente.
+      if ((await ref.get()).exists) await ref.delete();
+      return;
+    }
     const state = mapStateForDuel(duel.status);
     if (!state) return;
 
-    const ref = db.collection("map_connections").doc(`duel_${duelId}`);
     const FieldValue = admin.firestore.FieldValue;
 
     if (state === "ended") {
@@ -63,13 +82,21 @@ export async function syncDuelOnMap(duelId: string): Promise<void> {
 
     const existing = await ref.get();
     if (existing.exists) {
-      await ref.update({ state });
+      await ref.update({ state, expiresAt: futureExpiry() });
       return;
     }
 
     const [a, b] = await Promise.all([pointOfUser(duel.challengerId), pointOfUser(duel.opponentId)]);
     if (!a?.point || !b?.point || !a.polisId || a.polisId === b.polisId) return;
-    await ref.set({ kind: "duel", state, from: a.point, to: b.point, startedAt: FieldValue.serverTimestamp(), endedAt: null });
+    await ref.set({
+      kind: "duel",
+      state,
+      from: a.point,
+      to: b.point,
+      startedAt: FieldValue.serverTimestamp(),
+      endedAt: null,
+      expiresAt: futureExpiry(),
+    });
   } catch (error) {
     console.error("Mapa: falha ao espelhar duelo (ignorada):", error);
   }
